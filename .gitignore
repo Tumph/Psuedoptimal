@@ -1,0 +1,11 @@
+venv/
+.env
+logs/
+outputs/
+.ruff_cache/
+.pytest_cache/
+.vscode/
+.DS_Store
+.idea/
+.cursor/
+.cursor/

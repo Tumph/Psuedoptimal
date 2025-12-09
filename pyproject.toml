@@ -1,0 +1,48 @@
+[project]
+name = "llm-golf"
+version = "0.1.0"
+description = "Train an LLM to invent a compressed DSL that another LLM interprets back to Python"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "LLM-Golf Team" }]
+
+dependencies = [
+    "torch>=2.1.0",
+    "transformers>=4.45.0",
+    "trl>=0.12.0",
+    "peft>=0.13.0",
+    "accelerate>=1.0.0",
+    "datasets>=3.0.0",
+    "clearml>=1.16.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# bitsandbytes for 4-bit quantization (Linux with CUDA only)
+cuda = [
+    "bitsandbytes>=0.42.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-timeout>=2.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+train-dsl = "train_dsl:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
