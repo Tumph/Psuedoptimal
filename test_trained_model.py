@@ -17,7 +17,11 @@ def load_model(adapter_path: str, device: str = "auto"):
     print(f"Loading model from: {adapter_path}")
 
     # Determine base model from adapter config
-    base_model_name = "Qwen/Qwen2.5-Coder-3B-Instruct"
+    import json
+    config_path = f"{adapter_path}/adapter_config.json"
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+        base_model_name = config["base_model_name_or_path"]
 
     print(f"  Base model: {base_model_name}")
     print(f"  Loading adapter...")
