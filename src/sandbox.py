@@ -24,6 +24,21 @@ _RUNNER_SCRIPT = '''
 import sys
 import json
 import resource
+import builtins
+
+# Explicit allowed modules for runtime security
+ALLOWED_MODULES = {
+    "math", "re", "collections", "itertools", "functools", "operator",
+    "string", "heapq", "bisect", "copy", "typing", "random", "statistics"
+}
+
+def secure_import(name, globals=None, locals=None, fromlist=(), level=0):
+    """Restricted __import__ replacement."""
+    # Handle both "import x" and "from x import y"
+    base_name = name.split('.')[0]
+    if base_name not in ALLOWED_MODULES:
+        raise ImportError(f"Import of '{name}' is not allowed in sandbox.")
+    return __import__(name, globals, locals, fromlist, level)
 
 def set_limits(memory_mb: int, cpu_seconds: int):
     """Set resource limits for the sandboxed process."""
@@ -94,7 +109,7 @@ def execute_with_tests(code: str, test_code: str) -> dict:
         "print": print,
 
         # Import (restricted to safe modules)
-        "__import__": __import__,
+        "__import__": secure_import,
     }
 
     exec_globals = {"__builtins__": safe_builtins}

@@ -3,24 +3,17 @@
 from typing import Union
 
 # =============================================================================
-# Student Model Prompts (DSL Generation)
+# Student Model Prompts (Encoding Generation)
 # =============================================================================
 
-STUDENT_SYSTEM_PROMPT = """You are a code compression expert. Your task is to write extremely concise pseudo-code (DSL) that captures the essential logic of a programming problem.
-
-DSL Compression Rules:
-- Use single letters for common patterns: L=list, D=dict, S=set, s=string
-- Use arrow notation: -> for return
-- Use shorthand: fn for function, lp for loop, if/el for if/else
-- Omit type hints and docstrings
-- Use math notation where clearer: ∈ for 'in', ∀ for 'for all'
-- Focus on algorithm essence, minimize syntax
-
-Your DSL will be expanded by another model into full Python code. Be as concise as possible while preserving the logic."""
+STUDENT_SYSTEM_PROMPT = """You are an encoder. Compress programming tasks into minimal representations.
+Your output is the ONLY information another model receives to write Python code.
+You are heavily penalized for every token - be extremely concise.
+Include: function name, parameters, core logic. Use any symbols or format you invent."""
 
 STUDENT_USER_TEMPLATE = """Task: {prompt}
 
-Write minimal DSL that solves this. Be extremely concise:"""
+Encode (minimal):"""
 
 
 def format_student_prompt(task_prompt: str) -> list[dict[str, str]]:
@@ -53,39 +46,26 @@ def format_student_prompt_text(task_prompt: str) -> str:
 
 
 # =============================================================================
-# Generator Model Prompts (DSL to Python Expansion)
+# Generator Model Prompts (Encoding to Python Expansion)
 # =============================================================================
 
-GENERATOR_SYSTEM_PROMPT = """You are a code expansion expert. You receive compressed pseudo-code (DSL) and must expand it into complete, valid, executable Python code.
+GENERATOR_SYSTEM_PROMPT = """You are a decoder. You receive a compressed encoding and must expand it into complete, valid, executable Python code.
+The encoding contains all information needed: function name, parameters, and logic.
+You have NO other context - interpret the encoding directly.
+Expand to proper Python with correct syntax, indentation, and necessary imports.
+Output ONLY the Python code."""
 
-Expansion Rules:
-- Expand all abbreviations to full Python syntax
-- Add proper indentation and structure
-- Include necessary imports at the top
-- The function name MUST match what the task describes
-- Output ONLY the Python code, no explanations
+GENERATOR_USER_TEMPLATE = """{encoding}
 
-Common DSL patterns:
-- fn = function definition (def)
-- -> = return statement
-- L/D/S = list/dict/set
-- lp = loop (for/while)"""
-
-GENERATOR_USER_TEMPLATE = """Original Task: {task_prompt}
-
-DSL to expand:
-{dsl_code}
-
-Python code:"""
+Python:"""
 
 
-def format_generator_prompt(task_prompt: str, dsl_code: str) -> list[dict[str, str]]:
+def format_generator_prompt(encoding: str) -> list[dict[str, str]]:
     """
-    Format a DSL expansion request for the Generator model (chat format).
+    Format an encoding expansion request for the Generator model (chat format).
 
     Args:
-        task_prompt: The original MBPP task description
-        dsl_code: The compressed DSL from the Student
+        encoding: The compressed encoding from the Student
 
     Returns:
         List of message dicts for chat template
@@ -94,27 +74,24 @@ def format_generator_prompt(task_prompt: str, dsl_code: str) -> list[dict[str, s
         {"role": "system", "content": GENERATOR_SYSTEM_PROMPT},
         {
             "role": "user",
-            "content": GENERATOR_USER_TEMPLATE.format(
-                task_prompt=task_prompt, dsl_code=dsl_code
-            ),
+            "content": GENERATOR_USER_TEMPLATE.format(encoding=encoding),
         },
     ]
 
 
-def format_generator_prompt_text(task_prompt: str, dsl_code: str) -> str:
+def format_generator_prompt_text(encoding: str) -> str:
     """
-    Format a DSL expansion request for the Generator model (plain text).
+    Format an encoding expansion request for the Generator model (plain text).
 
     Args:
-        task_prompt: The original MBPP task description
-        dsl_code: The compressed DSL from the Student
+        encoding: The compressed encoding from the Student
 
     Returns:
         Formatted prompt string
     """
     return (
         f"{GENERATOR_SYSTEM_PROMPT}\n\n"
-        f"{GENERATOR_USER_TEMPLATE.format(task_prompt=task_prompt, dsl_code=dsl_code)}"
+        f"{GENERATOR_USER_TEMPLATE.format(encoding=encoding)}"
     )
 
 

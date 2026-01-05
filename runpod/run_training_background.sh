@@ -4,7 +4,7 @@
 
 set -e
 
-cd /workspace/llm-golf
+cd /workspace/Psuedoptimal
 
 echo "=== Starting LLM-Golf Full Training in Background ==="
 
@@ -24,11 +24,11 @@ GENERATOR_MODEL="${GENERATOR_MODEL:-Qwen/Qwen2.5-Coder-7B-Instruct}"
 BATCH_SIZE="${BATCH_SIZE:-2}"
 
 # Create logs directory
-mkdir -p /workspace/llm-golf/logs
+mkdir -p /workspace/Psuedoptimal/logs
 
 # Get timestamp for log file
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-LOG_FILE="/workspace/llm-golf/logs/training_${TIMESTAMP}.log"
+LOG_FILE="/workspace/Psuedoptimal/logs/training_${TIMESTAMP}.log"
 
 echo "Configuration:"
 echo "  Student Model: $STUDENT_MODEL"

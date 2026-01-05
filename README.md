@@ -1,29 +1,42 @@
-# LLM-Golf: Learning Compressed Code Languages
+# Psuedoptimal: Emergent Machine-to-Machine Communication
 
-Train a small LLM to invent a compressed domain-specific language (DSL) that a larger LLM can interpret back into executable Python code.
+Train a small LLM to invent a compressed encoding that a larger LLM can interpret back into executable Python code — without seeing the original task.
+
+## Research Question
+
+**If forced to communicate under severe token constraints, will LLMs develop their own efficient encoding schemes?**
+
+The key insight: by removing the original task description from the decoder, we force the encoder to embed ALL necessary information into a compressed representation. Over training, this creates pressure for emergent communication protocols.
 
 ## Architecture
 
 ```
-┌─────────────────┐         DSL          ┌─────────────────┐        Python        ┌───────────┐
-│     Student     │ ───────────────────► │    Generator    │ ────────────────────►│  Sandbox  │
-│  (0.5B, LoRA)   │                      │  (1.5B, Frozen) │                      │  (Tests)  │
-│    Trainable    │ ◄─────────────────── │   Interpreter   │ ◄────────────────────│  Reward   │
-└─────────────────┘       Reward         └─────────────────┘                      └───────────┘
+┌─────────────────┐                      ┌─────────────────┐
+│  MBPP Task      │                      │                 │
+│  Description    │────┐                 │                 │
+└─────────────────┘    │                 │                 │
+                       ▼                 │                 │
+┌─────────────────┐  Encoding only  ┌────┴────────────┐        Python        ┌───────────┐
+│     Student     │ ──────────────► │    Generator    │ ────────────────────►│  Sandbox  │
+│  (0.5B, LoRA)   │                 │  (1.5B, Frozen) │                      │  (Tests)  │
+│     Encoder     │ ◄────────────── │     Decoder     │ ◄────────────────────│  Reward   │
+└─────────────────┘     Reward      └─────────────────┘                      └───────────┘
+                                           │
+                                           │ NO task description!
+                                           │ Encoding must be self-contained
+                                           ▼
 ```
 
-**The Goal**: The Student learns to generate increasingly compressed "DSL" code that:
-1. Is shorter than full Python (measured in tokens)
-2. Still correctly solves programming problems when expanded by the Generator
+**Critical Design**: The Generator (decoder) receives ONLY the Student's encoding — NOT the original task. This forces the Student to encode all information needed to reconstruct working Python.
 
 ## How It Works
 
-1. **Student Model** receives an MBPP programming task and generates compressed DSL
-2. **Generator Model** (frozen) interprets the DSL and expands it to Python
+1. **Student Model** (encoder) receives an MBPP task and produces a compressed encoding
+2. **Generator Model** (decoder, frozen) sees ONLY the encoding and must produce Python
 3. **Sandbox** executes the Python against MBPP test cases
-4. **Reward** = `(+10 if tests pass, -1 if fail) - (0.05 × DSL_tokens)`
+4. **Reward** = `pass_reward × (reference_tokens / encoding_tokens)` if tests pass
 
-The length penalty incentivizes the Student to invent increasingly compressed representations while the pass/fail reward ensures the code remains correct.
+The compression ratio reward incentivizes shorter encodings. The correctness signal shapes which encodings work. Over training, an efficient encoding scheme emerges.
 
 ## Requirements
 
@@ -38,8 +51,8 @@ The length penalty incentivizes the Student to invent increasingly compressed re
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/llm-golf.git
-cd llm-golf
+git clone https://github.com/your-org/Psuedoptimal.git
+cd Psuedoptimal
 
 # Create virtual environment
 python -m venv venv
@@ -134,9 +147,9 @@ Options:
 ```python
 @dataclass
 class TrainingConfig:
-    # Models (correct Qwen naming format)
-    student_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"
-    generator_model: str = "Qwen/Qwen2.5-Coder-1.5B-Instruct"
+    # Models (encoder-decoder pair)
+    student_model: str = "Qwen/Qwen2.5-Coder-0.5B-Instruct"   # Encoder
+    generator_model: str = "Qwen/Qwen2.5-Coder-1.5B-Instruct" # Decoder (frozen)
 
     # Training
     batch_size: int = 2
@@ -144,10 +157,9 @@ class TrainingConfig:
     num_epochs: int = 3
     learning_rate: float = 1e-5
 
-    # Reward
-    pass_reward: float = 10.0
-    fail_reward: float = -1.0
-    length_penalty: float = 0.05  # Per token
+    # Reward (compression ratio based)
+    pass_reward: float = 10.0   # Base reward, multiplied by compression ratio
+    fail_reward: float = -1.0   # Penalty for failing tests
 ```
 
 ## RunPod Deployment (Recommended for Serious Training)
@@ -180,8 +192,8 @@ export HF_TOKEN="your_token"
 
 # Clone and setup
 cd /workspace
-git clone https://github.com/YOUR_USERNAME/llm-golf.git
-cd llm-golf
+git clone https://github.com/YOUR_USERNAME/Psuedoptimal.git
+cd Psuedoptimal
 bash runpod/setup.sh
 ```
 
@@ -241,7 +253,7 @@ For systems with less memory, reduce `batch_size` and `num_generations`.
 ## Project Structure
 
 ```
-llm-golf/
+Psuedoptimal/
 ├── pyproject.toml          # Dependencies and project config
 ├── README.md               # This file
 ├── train_dsl.py            # Main training script
@@ -251,9 +263,9 @@ llm-golf/
 │   └── run_training_background.sh  # Run training (background)
 └── src/
     ├── __init__.py
-    ├── models.py           # Model loading with 4-bit quantization
-    ├── prompts.py          # Prompt templates for Student & Generator
-    ├── rewards.py          # Custom reward function (core logic)
+    ├── models.py           # Model loading (encoder + decoder)
+    ├── prompts.py          # Prompts (encoder sees task, decoder sees encoding only)
+    ├── rewards.py          # Reward function (compression ratio based)
     ├── sandbox.py          # Safe code execution
     └── callbacks.py        # Visualization callback
 ```
@@ -265,18 +277,24 @@ llm-golf/
 The `DSLRewardFunction` class implements the core training signal:
 
 ```python
-def __call__(self, completions, task_prompt, test_list, test_imports, **kwargs):
-    # 1. Expand DSL → Python via Generator
-    python_codes = self._batch_expand_dsl(completions, task_prompt)
+def __call__(self, completions, test_list, reference_code, **kwargs):
+    # 1. Expand Encoding → Python via Generator (NO task context!)
+    python_codes = self._batch_expand_encodings(completions)
 
     # 2. Execute tests in sandbox
-    for dsl, python, tests in zip(completions, python_codes, test_list):
+    for encoding, python, tests, ref in zip(completions, python_codes, test_list, reference_code):
         passed = self._execute_tests(python, tests, imports)
-        dsl_tokens = len(tokenizer.encode(dsl))
+        encoding_tokens = len(tokenizer.encode(encoding))
+        ref_tokens = len(tokenizer.encode(ref))
 
-        # 3. Compute reward
-        reward = (10.0 if passed else -1.0) - (0.05 * dsl_tokens)
+        # 3. Compute reward: compression ratio × pass reward
+        if passed:
+            reward = 10.0 * (ref_tokens / encoding_tokens)  # Higher compression = higher reward
+        else:
+            reward = -1.0
 ```
+
+**Key**: The Generator never sees `task_prompt` — only the raw encoding.
 
 ### Sandbox (`src/sandbox.py`)
 
@@ -287,28 +305,30 @@ Executes generated Python safely using subprocess isolation:
 
 ### Visualization Callback (`src/callbacks.py`)
 
-Every 50 steps, prints DSL→Python expansion examples:
+Every 50 steps, prints Encoding→Python expansion examples:
 
 ```
 ================================================================================
-  DSL VISUALIZATION - Step 150
+  ENCODING VISUALIZATION - Step 150
 ================================================================================
 
 --- Example 1 ---
 TASK: Write a function to find the maximum of two numbers.
 
-DSL (12 tokens):
+ENCODING (12 tokens):
 ----------------------------------------
-fn max2(a,b)->a if a>b el b
+max2(a,b)->a>b?a:b
 ----------------------------------------
 
-EXPANDED PYTHON:
+EXPANDED PYTHON (from encoding only):
 ----------------------------------------
 def max2(a, b):
     return a if a > b else b
 ----------------------------------------
 ================================================================================
 ```
+
+Note: The Generator produces Python from the encoding alone — it never sees "find the maximum of two numbers".
 
 ## Troubleshooting
 
@@ -332,17 +352,25 @@ The Generator may need warmup. Try:
 2. Lowering the Generator's temperature (currently 0.1)
 3. Adding few-shot examples to the Generator prompt
 
-## How the DSL Evolves
+## How the Encoding Evolves
 
-Initially, the Student outputs verbose code. Over training, it learns patterns like:
+Initially, the Student outputs verbose, Python-like code. As training progresses, compression pressure and correctness signals shape the encoding:
 
-| Training Step | Example DSL | Tokens |
-|---------------|-------------|--------|
-| 0 | `def is_prime(n): return n > 1 and all(n % i for i in range(2, int(n**0.5)+1))` | 35 |
-| 500 | `fn prime(n)->n>1 and all(n%i for i in range(2,int(n**.5)+1))` | 28 |
-| 2000 | `fn p(n)->n>1&all(n%i for i∈2..√n)` | 18 |
+| Training Step | Example Encoding | Tokens | Notes |
+|---------------|------------------|--------|-------|
+| 0 | `def is_prime(n): return n > 1 and all(n % i for i in range(2, int(n**0.5)+1))` | 35 | Full Python |
+| 500 | `prime(n)->n>1&all(n%i for i in 2..√n)` | 22 | Syntax shortcuts |
+| 2000 | `p:n→n>1∧∀i∈[2,√n]:n∤i` | 14 | Mathematical notation |
+| 5000+ | `Ƥ(n)⊢n>1∧⊥∃d∈[2,√n]` | 10 | Novel symbols |
 
-The language that emerges depends on what the Generator can reliably interpret.
+The encoding that emerges is whatever the Student-Generator pair can reliably use to pass tests. Since the Generator has no task context, the encoding must be self-explanatory.
+
+### Why This Works
+
+1. **Information Bottleneck**: The Student must compress all task information into minimal tokens
+2. **Correctness Pressure**: Only encodings the Generator can decode to working code survive
+3. **Co-adaptation**: Though only the Student trains, the pre-trained Generator's knowledge shapes viable encodings
+4. **Emergent Protocol**: The final encoding scheme is not prescribed — it emerges from optimization
 
 ## License
 
@@ -353,9 +381,9 @@ MIT
 If you use this work, please cite:
 
 ```bibtex
-@software{llm_golf,
-  title = {LLM-Golf: Learning Compressed Code Languages},
+@software{Psuedoptimal,
+  title = {Psuedoptimal: Emergent Machine-to-Machine Communication for Code},
   year = {2025},
-  url = {https://github.com/your-org/llm-golf}
+  url = {https://github.com/your-org/Psuedoptimal}
 }
 ```

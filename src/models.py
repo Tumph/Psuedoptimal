@@ -163,6 +163,10 @@ def load_student_model(
     print(f"  Device: {device_map}")
     print(f"  LoRA rank: {lora_config.r}, alpha: {lora_config.lora_alpha}")
 
+    # Support offline mode by checking if models are cached
+    import os
+    local_files_only = os.environ.get("TRANSFORMERS_OFFLINE") == "1" or os.environ.get("HF_HUB_OFFLINE") == "1"
+
     # Load base model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -172,6 +176,7 @@ def load_student_model(
         trust_remote_code=True,
         token=token,
         attn_implementation="eager",  # For compatibility
+        local_files_only=local_files_only,
     )
 
     # Prepare for k-bit training if quantized
@@ -187,6 +192,7 @@ def load_student_model(
         model_name,
         trust_remote_code=True,
         token=token,
+        local_files_only=local_files_only,
     )
 
     # Set padding token and side
@@ -245,6 +251,10 @@ def load_generator_model(
     print(f"  Device: {device_map}")
     print(f"  Mode: Frozen (no gradients)")
 
+    # Support offline mode by checking if models are cached
+    import os
+    local_files_only = os.environ.get("TRANSFORMERS_OFFLINE") == "1" or os.environ.get("HF_HUB_OFFLINE") == "1"
+
     # Load model
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -254,6 +264,7 @@ def load_generator_model(
         trust_remote_code=True,
         token=token,
         attn_implementation="eager",  # For compatibility
+        local_files_only=local_files_only,
     )
 
     # Freeze all parameters
@@ -268,6 +279,7 @@ def load_generator_model(
         model_name,
         trust_remote_code=True,
         token=token,
+        local_files_only=local_files_only,
     )
 
     if tokenizer.pad_token is None:

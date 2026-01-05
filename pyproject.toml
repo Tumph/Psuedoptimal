@@ -1,5 +1,5 @@
 [project]
-name = "llm-golf"
+name = "Psuedoptimal"
 version = "0.1.0"
 description = "Train an LLM to invent a compressed DSL that another LLM interprets back to Python"
 readme = "README.md"

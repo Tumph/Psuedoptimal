@@ -12,13 +12,14 @@ from .rewards import DSLRewardFunction
 
 class DSLVisualizationCallback(TrainerCallback):
     """
-    Callback that visualizes DSL→Python expansion every N steps.
+    Callback that visualizes Encoding→Python expansion every N steps.
 
     Prints examples showing:
-    1. Original MBPP task prompt
-    2. Generated DSL (Student output)
-    3. Expanded Python (Generator output)
-    4. Test pass/fail status
+    1. Original MBPP task prompt (for human reference)
+    2. Generated encoding (Student output)
+    3. Expanded Python (Generator output - from encoding ONLY)
+
+    Note: The Generator sees ONLY the encoding, not the task prompt.
     """
 
     def __init__(
@@ -79,7 +80,7 @@ class DSLVisualizationCallback(TrainerCallback):
         ]
 
         print("\n" + "=" * 80)
-        print(f"  DSL VISUALIZATION - Step {state.global_step}")
+        print(f"  ENCODING VISUALIZATION - Step {state.global_step}")
         print("=" * 80)
 
         for i, task in enumerate(sample_tasks[: self.num_examples]):
@@ -116,24 +117,24 @@ class DSLVisualizationCallback(TrainerCallback):
                 eos_token_id=self.student_tokenizer.eos_token_id,
             )
 
-        # Decode DSL
+        # Decode encoding
         generated = outputs[0][inputs.input_ids.shape[1] :]
-        dsl_code = self.student_tokenizer.decode(generated, skip_special_tokens=True)
+        encoding = self.student_tokenizer.decode(generated, skip_special_tokens=True)
 
-        # Expand to Python via Generator
-        python_code = self.reward_fn.expand_single(task_prompt, dsl_code)
+        # Expand to Python via Generator (encoding only, no task context)
+        python_code = self.reward_fn.expand_single(encoding)
 
         # Count tokens
-        dsl_tokens = len(self.student_tokenizer.encode(dsl_code))
+        encoding_tokens = len(self.student_tokenizer.encode(encoding))
 
         # Print visualization
         print(f"\n--- Example {example_num} ---")
         print(f"TASK: {task_prompt}")
-        print(f"\nDSL ({dsl_tokens} tokens):")
+        print(f"\nENCODING ({encoding_tokens} tokens):")
         print("-" * 40)
-        print(dsl_code[:500] if dsl_code else "(empty)")
+        print(encoding[:500] if encoding else "(empty)")
         print("-" * 40)
-        print(f"\nEXPANDED PYTHON:")
+        print(f"\nEXPANDED PYTHON (from encoding only):")
         print("-" * 40)
         print(python_code[:800] if python_code else "(empty)")
         print("-" * 40)
@@ -141,13 +142,13 @@ class DSLVisualizationCallback(TrainerCallback):
         # Log to ClearML if available
         if self.clearml_logger:
             self._log_to_clearml(
-                task_prompt, dsl_code, python_code, dsl_tokens, step, example_num
+                task_prompt, encoding, python_code, encoding_tokens, step, example_num
             )
 
     def _log_to_clearml(
         self,
         task: str,
-        dsl: str,
+        encoding: str,
         python: str,
         tokens: int,
         step: int,
@@ -159,19 +160,19 @@ class DSLVisualizationCallback(TrainerCallback):
 
 **Task:** {task}
 
-**DSL ({tokens} tokens):**
+**Encoding ({tokens} tokens):**
 ```
-{dsl[:500]}
+{encoding[:500]}
 ```
 
-**Expanded Python:**
+**Expanded Python (from encoding only):**
 ```python
 {python[:800]}
 ```
 """
         self.clearml_logger.report_text(
             msg=text,
-            title="DSL Expansion",
+            title="Encoding Expansion",
             series=f"Example_{example_num}",
             iteration=step,
         )
@@ -191,6 +192,11 @@ class MetricsCallback(TrainerCallback):
         self.reward_history = []
         self.dsl_length_history = []
 
+        # Track reward distribution to detect lottery tickets
+        self.pass_rate_history = []
+        self.compression_ratio_history = []
+        self.encoding_length_history = []
+
     def on_log(
         self,
         args,
@@ -207,6 +213,14 @@ class MetricsCallback(TrainerCallback):
         if "reward" in logs:
             self.reward_history.append(logs["reward"])
 
+        # Track additional metrics if available
+        if "pass_rate" in logs:
+            self.pass_rate_history.append(logs["pass_rate"])
+        if "compression_ratio" in logs:
+            self.compression_ratio_history.append(logs["compression_ratio"])
+        if "encoding_length" in logs:
+            self.encoding_length_history.append(logs["encoding_length"])
+
         # Log to ClearML
         if self.clearml_logger:
             for key, value in logs.items():
@@ -217,6 +231,36 @@ class MetricsCallback(TrainerCallback):
                         value=value,
                         iteration=state.global_step,
                     )
+
+            # Log reward statistics to detect lottery tickets
+            if len(self.reward_history) > 0:
+                import numpy as np
+                recent_rewards = self.reward_history[-100:]  # Last 100 steps
+
+                self.clearml_logger.report_scalar(
+                    title="Reward Stats",
+                    series="mean",
+                    value=np.mean(recent_rewards),
+                    iteration=state.global_step,
+                )
+                self.clearml_logger.report_scalar(
+                    title="Reward Stats",
+                    series="std",
+                    value=np.std(recent_rewards),
+                    iteration=state.global_step,
+                )
+                self.clearml_logger.report_scalar(
+                    title="Reward Stats",
+                    series="max",
+                    value=np.max(recent_rewards),
+                    iteration=state.global_step,
+                )
+                self.clearml_logger.report_scalar(
+                    title="Reward Stats",
+                    series="min",
+                    value=np.min(recent_rewards),
+                    iteration=state.global_step,
+                )
 
             # Log GPU memory
             if torch.cuda.is_available():

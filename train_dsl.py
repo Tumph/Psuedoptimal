@@ -61,6 +61,7 @@ class TrainingConfig:
     pass_reward: float = 10.0
     fail_reward: float = -1.0
     length_penalty: float = 0.05
+    max_compression_ratio: float = 5.0
 
     # Logging
     log_steps: int = 10
@@ -126,6 +127,7 @@ def prepare_dataset(tokenizer, config: TrainingConfig):
             "task_prompt": example["prompt"],  # Original for Generator
             "test_list": example["test_list"],
             "test_imports": example.get("test_imports", []),
+            "reference_code": example["code"],
         }
 
     dataset = dataset.map(format_for_grpo, remove_columns=["source_file", "code"])
@@ -173,7 +175,11 @@ def main():
         config.max_samples = 50
         config.save_steps = 10
         config.log_steps = 1
-        print("Debug mode enabled: using 50 samples")
+        # Optimize for speed on local debug
+        config.num_generations = 2
+        config.max_completion_length = 128
+        config.batch_size = 1
+        print("Debug mode enabled: using 50 samples, G=2, batch=1")
     if args.no_clearml:
         config.use_clearml = False
 
@@ -228,6 +234,7 @@ def main():
         pass_reward=config.pass_reward,
         fail_reward=config.fail_reward,
         length_penalty_coef=config.length_penalty,
+        max_compression_ratio=config.max_compression_ratio,
     )
 
     reward_fn = create_reward_function(
@@ -259,7 +266,9 @@ def main():
         max_completion_length=config.max_completion_length,
         beta=config.beta,
         # Optimization
-        bf16=True,
+        # Disable bf16 on MPS to avoid numerical instability (NaN gradients)
+        bf16=False if torch.backends.mps.is_available() else True,
+        fp16=False,  # Use float32 on MPS for maximum stability
         gradient_checkpointing=True,
         optim="adamw_torch_fused" if torch.cuda.is_available() else "adamw_torch",
         # Logging

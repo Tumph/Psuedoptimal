@@ -4,7 +4,7 @@
 
 set -e
 
-cd /workspace/llm-golf
+cd /workspace/Psuedoptimal
 
 echo "=== LLM-Golf Full Training ==="
 

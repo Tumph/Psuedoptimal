@@ -29,19 +29,18 @@ fi
 
 # Clone or update the repository
 cd /workspace
-if [ -d "llm-golf" ]; then
-    echo "Updating existing llm-golf repository..."
-    cd llm-golf
+if [ -d "Psuedoptimal" ]; then
+    echo "Updating existing Psuedoptimal repository..."
+    cd Psuedoptimal
     git pull
 else
-    echo "Cloning llm-golf repository..."
-    # Replace with your actual repo URL
-    git clone https://github.com/YOUR_USERNAME/llm-golf.git
-    cd llm-golf
+    echo "Cloning Psuedoptimal repository..."
+    git clone https://github.com/Tumph/Psuedoptimal.git
+    cd Psuedoptimal
 fi
 
 # Install the package
-echo "Installing llm-golf package..."
+echo "Installing Psuedoptimal package..."
 pip install -e ".[cuda]"
 
 # Verify GPU is available
